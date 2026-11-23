@@ -1,0 +1,56 @@
+id = "wisonlau.rainbow-csv"
+name = "Rainbow CSV"
+version = "0.1.0"
+description = "Colour each CSV/TSV column differently, highlight the column under the caret, and align or trim cells. Delimiter is detected per file (comma, semicolon, tab, pipe)."
+authors = ["wisonlau"]
+license = "MIT"
+categories = ["tools"]
+engines.openidea = "^1.4"
+wasm = "dist/plugin.wasm"
+activation = ["on-language:csv"]
+
+[capabilities]
+required = ["editor.read", "editor.write"]
+
+# 声明 csv 语言（.csv/.tsv）。IDE 内置语言里没有 csv，不会冲突。
+[[contributes.languages]]
+path = "languages/csv.toml"
+
+# 光标所在列的整列高亮
+[[contributes.providers]]
+kinds = ["document-highlights"]
+languages = ["csv"]
+
+[[contributes.commands]]
+id = "align-columns"
+title = "Rainbow CSV: Align Columns"
+category = "Rainbow CSV"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "trim-cells"
+title = "Rainbow CSV: Trim Cells"
+category = "Rainbow CSV"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "next-field"
+title = "Rainbow CSV: Next Field"
+category = "Rainbow CSV"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "prev-field"
+title = "Rainbow CSV: Previous Field"
+category = "Rainbow CSV"
+when = "editorFocus"
+
+[[contributes.commands]]
+id = "show-delimiter"
+title = "Rainbow CSV: Show Delimiter and Columns"
+category = "Rainbow CSV"
+when = "editorFocus"
+
+[contributes.settings]
+title = "Rainbow CSV"
+schema = "settings.schema.json"

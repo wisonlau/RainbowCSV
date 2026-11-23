@@ -1,0 +1,29 @@
+{
+  "properties": {
+    "delimiter": {
+      "type": "string",
+      "title": "Delimiter",
+      "description": "auto: tab for .tsv-like files, else the delimiter that splits the first lines most evenly. A fixed value overrides detection.",
+      "enum": ["auto", ",", ";", "|", "tab"],
+      "default": "auto"
+    },
+    "colorCount": {
+      "type": "integer",
+      "title": "Colours before the palette repeats",
+      "description": "How many different colours to cycle through across columns. 2 to 8. Each column keeps its colour all the way down, header row included.",
+      "default": 8
+    },
+    "highlightColumn": {
+      "type": "boolean",
+      "title": "Highlight the column under the caret",
+      "description": "Mark the cells of the caret's column, plus the row it is on.",
+      "default": true
+    },
+    "maxSizeKb": {
+      "type": "integer",
+      "title": "Skip files larger than (KB)",
+      "description": "Colour only files up to this size; larger files stay uncoloured so typing stays fast. 0 disables the limit.",
+      "default": 2048
+    }
+  }
+}

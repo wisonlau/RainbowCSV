@@ -1,0 +1,6 @@
+﻿id,name,role,city,score,active
+1,"Zhang, San",backend,Shanghai,92.5,true
+2,Li Si,frontend,"Beijing, Chaoyang",88,false
+3,王五,"data, ml",Hangzhou,,true
+4,"O""Brien",devops,Shenzhen,75.25,false
+5,Chen Qi,"qa, automation",Chengdu,81,true

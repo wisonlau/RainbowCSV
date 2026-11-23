@@ -1,0 +1,4 @@
+id = "csv"
+name = "CSV"
+extensions = ["csv", "tsv", "psv"]
+indent = { tab-size = 4, insert-spaces = true }
