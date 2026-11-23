@@ -181,8 +181,10 @@ impl Plugin for RainbowCsv {
             "align-columns" => {
                 Self::replace_document(&editor, |text| {
                     let parsed = csv::parse(text, resolve_delimiter(text));
-                    csv::align(text, &parsed)
-                        .ok_or_else(|| "Cannot align: a field spans more than one line.".to_string())
+                    csv::align(text, &parsed).ok_or_else(|| {
+                        "Cannot align: a field spans more than one line, or the delimiter cuts through a quoted field."
+                            .to_string()
+                    })
                 })?;
                 Ok(None)
             }
@@ -333,6 +335,47 @@ mod tests {
     fn detect_ignores_delimiters_inside_quotes() {
         // 引号里两个逗号，引号外一个分号：分号才是真分隔符
         assert_eq!(csv::detect_delimiter("\"a,b,c\";d\n"), b';');
+    }
+
+    #[test]
+    fn detect_ignores_delimiters_in_quoted_fields_after_the_first_column() {
+        // 第 2 列整体是引号字段，里面的分号不能算给分号
+        let text = "id,notes\n1,\"a;b;c\"\n2,\"long;b;c\"\n";
+        assert_eq!(csv::detect_delimiter(text), b',');
+    }
+
+    #[test]
+    fn detect_keeps_the_real_delimiter_when_the_last_column_is_quoted() {
+        let text = "id;notes\n1;\"a,b,c\"\n2;\"long,b,c\"\n";
+        assert_eq!(csv::detect_delimiter(text), b';');
+    }
+
+    #[test]
+    fn align_preserves_quoted_fields_that_contain_the_other_delimiter() {
+        let text = "id,notes\n1,\"a;b;c\"\n2,\"long;b;c\"\n";
+        let parsed = csv::parse(text, csv::detect_delimiter(text));
+        let aligned = csv::align(text, &parsed).expect("align");
+
+        // 对齐后仍是 3 行 2 列，引号里的内容一字不改
+        let reparsed = csv::parse(&aligned, b',');
+        assert_eq!(reparsed.rows.len(), 3);
+        let notes: Vec<&str> = reparsed
+            .rows
+            .iter()
+            .map(|row| {
+                let field = row.fields[1];
+                &aligned[field.start..field.end]
+            })
+            .collect();
+        assert_eq!(notes, ["notes", "\"a;b;c\"", "\"long;b;c\""]);
+    }
+
+    #[test]
+    fn align_refuses_when_the_delimiter_splits_inside_quotes() {
+        // 设置里固定了错误的分隔符：切分点落在引号里，宁可不动也不改内容
+        let text = "id,notes\n1,\"a;b;c\"\n";
+        let parsed = csv::parse(text, b';');
+        assert!(csv::align(text, &parsed).is_none());
     }
 
     #[test]
@@ -537,5 +580,28 @@ mod audit {
         let text = host.editor_text();
         assert!(text.contains("a  ,bb"), "对齐结果: {text:?}");
         let _ = &text;
+    }
+
+    #[test]
+    fn quoted_second_column_keeps_comma_and_align_leaves_its_content_alone() {
+        // 评审给的复现：第 2 列整体是引号字段，里面的分号不能改变检测结果
+        let host = host_with(&declared_capabilities());
+        let text = "id,notes\n1,\"a;b;c\"\n2,\"long;b;c\"\n";
+        host.open_editor("/p/quoted.csv", "csv", text, &[(0, 0, 0, 0)]);
+
+        let body = RainbowCsv
+            .run_command("show-delimiter", &host.invocation(), None)
+            .expect("show-delimiter")
+            .expect("返回值");
+        assert_eq!(body, "Delimiter: comma (,) — 3 rows, 2 columns");
+
+        RainbowCsv
+            .run_command("align-columns", &host.invocation(), None)
+            .expect("align");
+        assert_eq!(
+            host.editor_text(),
+            "id,notes\n1 ,\"a;b;c\"\n2 ,\"long;b;c\"\n",
+            "对齐只能在引号外补空格"
+        );
     }
 }

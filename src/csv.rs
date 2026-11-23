@@ -148,59 +148,73 @@ fn inner_range(text: &str, field: Field) -> Option<(usize, usize)> {
     }
 }
 
-/// 检测分隔符：取前 20 个非空行，选平均切分次数最多的候选。
+/// 检测分隔符：取前 20 行作为样本，对每个候选做引号感知的解析，选「每行列数
+/// 最一致、且能切出两列以上」的那个；完全平局时按 `CANDIDATES` 的顺序。
 ///
-/// 引号内的分隔符不计入，避免 `"a,b";c` 这类行把逗号误判成主分隔符。
+/// 只看引号外的分隔符出现次数是不够的：`id,notes / 1,"a;b;c"` 这种第 2 列是
+/// 引号字段的文件，分号候选会把 `"a;b;c"` 当成三个字段（它的引号不在该候选的
+/// 字段开头），次数反而更多。按行结构评分才不会被引号里的分隔符骗到。
 pub fn detect_delimiter(text: &str) -> u8 {
-    let bytes = text.as_bytes();
-    let mut counts = [0usize; CANDIDATES.len()];
+    let (sample, truncated) = head_sample(text, 20);
+    let mut best = CANDIDATES[0];
+    let mut best_score = 0u32;
+    for &candidate in CANDIDATES.iter() {
+        let score = shape_score(sample, candidate, truncated);
+        if score > best_score {
+            best_score = score;
+            best = candidate;
+        }
+    }
+    best
+}
+
+/// 样本前 `max_lines` 个物理行；第二个返回值表示是否在样本中途截断。
+fn head_sample(text: &str, max_lines: usize) -> (&str, bool) {
     let mut lines = 0usize;
-    let mut i = 0usize;
-    let mut row_start = 0usize;
-    let mut in_quotes = false;
-
-    while i < bytes.len() && lines < 20 {
-        let b = bytes[i];
-        if in_quotes {
-            if b == b'"' {
-                if i + 1 < bytes.len() && bytes[i + 1] == b'"' {
-                    i += 2;
-                    continue;
-                }
-                in_quotes = false;
-            }
-            i += 1;
+    for (i, b) in text.as_bytes().iter().enumerate() {
+        if *b != b'\n' {
             continue;
         }
-        if b == b'"' && blank_before(bytes, row_start, i) {
-            in_quotes = true;
-            i += 1;
-            continue;
-        }
-        if b == b'\n' {
-            let blank = bytes[row_start..i]
-                .iter()
-                .all(|c| matches!(c, b'\r' | b' ' | b'\t'));
-            if !blank {
-                lines += 1;
-            }
-            row_start = i + 1;
-            i += 1;
-            continue;
-        }
-        if let Some(pos) = CANDIDATES.iter().position(|c| *c == b) {
-            counts[pos] += 1;
-        }
-        i += 1;
-    }
-
-    let mut best = 0usize;
-    for (pos, count) in counts.iter().enumerate() {
-        if *count > counts[best] {
-            best = pos;
+        lines += 1;
+        if lines >= max_lines {
+            return (&text[..=i], i + 1 < text.len());
         }
     }
-    CANDIDATES[best]
+    (text, false)
+}
+
+/// 候选分隔符的结构评分（0..=1000）：按该分隔符解析样本，取字段数的众数，
+/// 得众数占行数的比例。切不出两列及以上时为 0。
+fn shape_score(sample: &str, delimiter: u8, truncated: bool) -> u32 {
+    let mut parsed = parse(sample, delimiter);
+    if truncated {
+        // 采样点可能落在引号里，末行不完整，不参与统计
+        parsed.rows.pop();
+    }
+    let total = parsed.rows.len();
+    if total == 0 {
+        return 0;
+    }
+
+    let mut freq: Vec<(usize, usize)> = Vec::new(); // (列数, 出现次数)
+    for row in &parsed.rows {
+        let columns = row.fields.len();
+        match freq.iter_mut().find(|(cols, _)| *cols == columns) {
+            Some(entry) => entry.1 += 1,
+            None => freq.push((columns, 1)),
+        }
+    }
+    // 次数最多的列数；并列时取较小列数，让更窄的分隔符占优
+    let mut mode = (0usize, 0usize);
+    for &(columns, times) in &freq {
+        if times > mode.1 || (times == mode.1 && columns < mode.0) {
+            mode = (columns, times);
+        }
+    }
+    if mode.0 < 2 {
+        return 0;
+    }
+    (mode.1 * 1000 / total) as u32
 }
 
 /// 光标（字节偏移）所在的 (行, 列)。
@@ -258,6 +272,14 @@ pub fn prev_field(parsed: &Parsed, offset: usize) -> Option<Field> {
     best
 }
 
+/// 字段只有一侧带引号：说明当前分隔符从中间切开了引号字段（多见于设置里固定了
+/// 错误的分隔符）。这时补空白会落到别人的引号里面去，宁可不对齐。
+fn splits_inside_quotes(raw: &str) -> bool {
+    let opens = raw.trim_start().starts_with('"');
+    let closes = raw.trim_end().ends_with('"');
+    opens != closes
+}
+
 /// 按列最大宽度对齐。任一字段含换行（多行字段）时返回 None：补空格会破坏结构。
 pub fn align(text: &str, parsed: &Parsed) -> Option<String> {
     if parsed.rows.is_empty() {
@@ -270,6 +292,9 @@ pub fn align(text: &str, parsed: &Parsed) -> Option<String> {
         for (ci, field) in row.fields.iter().enumerate() {
             let raw = &text[field.start..field.end];
             if raw.contains('\n') {
+                return None;
+            }
+            if splits_inside_quotes(raw) {
                 return None;
             }
             let width = raw.chars().count();
