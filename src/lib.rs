@@ -192,6 +192,12 @@ impl Plugin for RainbowCsv {
             "trim-cells" => {
                 Self::replace_document(&editor, |text| {
                     let parsed = csv::parse(text, resolve_delimiter(text));
+                    // 分隔符判错时切出来的是引号碎片，裁剪会把引号里的空白当边界空白删掉
+                    if csv::has_split_quoted_fields(text, &parsed) {
+                        return Err(
+                            "Cannot trim: the delimiter cuts through a quoted field.".to_string()
+                        );
+                    }
                     Ok(csv::trim_cells(text, &parsed))
                 })?;
                 Ok(None)
@@ -603,5 +609,44 @@ mod audit {
             "id,notes\n1 ,\"a;b;c\"\n2 ,\"long;b;c\"\n",
             "对齐只能在引号外补空格"
         );
+    }
+
+    #[test]
+    fn headerless_semicolon_file_is_not_mistaken_for_commas() {
+        // 没有表头时两种切法都「整齐」，comma 会切开引号字段，必须排除
+        let text = "1;\"a, b, c\"\n2;\"long, b, c\"\n";
+        assert_eq!(csv::detect_delimiter(text), b';');
+    }
+
+    #[test]
+    fn headerless_semicolon_file_survives_trim_cells() {
+        let host = host_with(&declared_capabilities());
+        let text = "1;\"a, b, c\"\n2;\"long, b, c\"\n";
+        host.open_editor("/p/h.csv", "csv", text, &[(0, 0, 0, 0)]);
+
+        let body = RainbowCsv
+            .run_command("show-delimiter", &host.invocation(), None)
+            .expect("show-delimiter")
+            .expect("返回值");
+        assert_eq!(body, "Delimiter: semicolon (;) — 2 rows, 2 columns");
+
+        RainbowCsv
+            .run_command("trim-cells", &host.invocation(), None)
+            .expect("trim");
+        assert_eq!(host.editor_text(), text, "引号内的空格不是边界空白");
+    }
+
+    #[test]
+    fn trim_refuses_when_the_delimiter_splits_inside_quotes() {
+        // 设置里固定了错误的分隔符：trim 也不能动，否则删的是引号内部空格
+        let host = host_with(&declared_capabilities());
+        host.set_setting("delimiter", "\",\"");
+        let text = "1;\"a, b, c\"\n";
+        host.open_editor("/p/h2.csv", "csv", text, &[(0, 0, 0, 0)]);
+
+        RainbowCsv
+            .run_command("trim-cells", &host.invocation(), None)
+            .expect("trim");
+        assert_eq!(host.editor_text(), text);
     }
 }

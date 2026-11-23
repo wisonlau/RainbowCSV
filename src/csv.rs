@@ -184,7 +184,7 @@ fn head_sample(text: &str, max_lines: usize) -> (&str, bool) {
 }
 
 /// 候选分隔符的结构评分（0..=1000）：按该分隔符解析样本，取字段数的众数，
-/// 得众数占行数的比例。切不出两列及以上时为 0。
+/// 得众数占行数的比例。切不出两列及以上、或者它把引号字段切开了，都为 0。
 fn shape_score(sample: &str, delimiter: u8, truncated: bool) -> u32 {
     let mut parsed = parse(sample, delimiter);
     if truncated {
@@ -193,6 +193,10 @@ fn shape_score(sample: &str, delimiter: u8, truncated: bool) -> u32 {
     }
     let total = parsed.rows.len();
     if total == 0 {
+        return 0;
+    }
+    // 结构再整齐也不作数：这个分隔符是从引号字段中间切过去的
+    if has_split_quoted_fields(sample, &parsed) {
         return 0;
     }
 
@@ -273,16 +277,29 @@ pub fn prev_field(parsed: &Parsed, offset: usize) -> Option<Field> {
 }
 
 /// 字段只有一侧带引号：说明当前分隔符从中间切开了引号字段（多见于设置里固定了
-/// 错误的分隔符）。这时补空白会落到别人的引号里面去，宁可不对齐。
+/// 错误的分隔符）。这时补空白或裁剪都会落到别人的引号里面去，宁可不动。
 fn splits_inside_quotes(raw: &str) -> bool {
     let opens = raw.trim_start().starts_with('"');
     let closes = raw.trim_end().ends_with('"');
     opens != closes
 }
 
+/// 解析结果里是否存在被分隔符切开的引号字段。改写文档的命令（对齐、裁剪）在
+/// 动手前都要先过这一关：分隔符判错时切出来的碎片不能当真。
+pub fn has_split_quoted_fields(text: &str, parsed: &Parsed) -> bool {
+    parsed.rows.iter().any(|row| {
+        row.fields.iter().any(|field| {
+            field.end <= text.len() && splits_inside_quotes(&text[field.start..field.end])
+        })
+    })
+}
+
 /// 按列最大宽度对齐。任一字段含换行（多行字段）时返回 None：补空格会破坏结构。
 pub fn align(text: &str, parsed: &Parsed) -> Option<String> {
     if parsed.rows.is_empty() {
+        return None;
+    }
+    if has_split_quoted_fields(text, parsed) {
         return None;
     }
 
@@ -292,9 +309,6 @@ pub fn align(text: &str, parsed: &Parsed) -> Option<String> {
         for (ci, field) in row.fields.iter().enumerate() {
             let raw = &text[field.start..field.end];
             if raw.contains('\n') {
-                return None;
-            }
-            if splits_inside_quotes(raw) {
                 return None;
             }
             let width = raw.chars().count();

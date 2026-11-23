@@ -4,3 +4,5 @@
 3,王五,"data, ml",Hangzhou,,true
 4,"O""Brien",devops,Shenzhen,75.25,false
 5,Chen Qi,"qa, automation",Chengdu,81,true
+6,"long;b;c", "data", Shanghai, 90, false
+7,"a    ;b;c", devops, Hangzhou, 89, true

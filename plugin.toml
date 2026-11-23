@@ -1,6 +1,6 @@
 id = "wisonlau.rainbow-csv"
 name = "Rainbow CSV"
-version = "0.1.1"
+version = "0.1.2"
 description = "Colour each CSV/TSV column differently, highlight the column under the caret, and align or trim cells. Delimiter is detected per file (comma, semicolon, tab, pipe)."
 authors = ["wisonlau"]
 license = "MIT"

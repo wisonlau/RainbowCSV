@@ -63,7 +63,7 @@ OpenIDEA 的插件 API 不允许插件指定 hex 颜色。`syntax-provider` 只�
 需要 Rust（含 `wasm32-wasip2` target）与 `openidea-plugin` CLI：
 
 ```bash
-cargo test                                          # 单元测试 + 能力审计，33 条
+cargo test                                          # 单元测试 + 能力审计，36 条
 # RUSTFLAGS 把本机路径重映射掉，避免写进 wasm 的 panic 位置信息
 PATH="$HOME/.cargo/bin:$PATH" \
   RUSTFLAGS="--remap-path-prefix=$HOME=/build" \
